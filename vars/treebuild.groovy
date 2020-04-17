@@ -26,8 +26,73 @@ def upstreamBuild(List<String> projectCollection, String currentProject, String 
     checkoutProjects(projectCollection, currentProject)
 
     // Build project tree from currentProject node
-    for (i = 0; i == 0 || currentProject != projectCollection.get(i-1); i++) {
+    for (i = 0; i == 0 || currentProject != projectCollection.get(i - 1); i++) {
         buildProject(projectCollection.get(i), settingsXmlId, goals, skipTests)
+    }
+}
+
+
+/**
+ * Builds the upstream for a specific project + the project itself (normal PR) + a SONARCLOUD analisys if needed
+ * @param the file with a collection of items following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param currentProject the project to build the stream from, like kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param propertiesFileId settings file that defines the goals for each rep
+ */
+def pullRequestBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId, String sonarCloudId) {
+    println "Upstream building of project ${currentProject}"
+    println "Project collection: ${projectCollection}"
+
+    checkoutProjects(projectCollection, currentProject)
+
+    // Build project tree from currentProject node
+    for (i = 0; currentProject != projectCollection.get(i); i++) {
+        println "Current Upstream Project:" + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'upstream'))
+    }
+
+    println "Build of current project: ${currentProject}"
+    buildProject(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId))
+
+    def sonarCloudReps = ["optaplanner", "drools", "appformer", "jbpm", "drools-wb", "kie-soup", "droolsjbpm-integration", "kie-wb-common", "openshift-drools-hacep"]
+    if(sonarCloudReps.contains(currentProject)) {
+        println "SONARCLOUD analysis of : ${currentProject}"
+        buildProjectSonar(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId, 'sonarcloud'), sonarCloudId)
+    } else {
+        println "INFO: ${currentProject} project is not for SONARCLOUD analysis"
+    }
+}
+
+/**
+ * Fetches the goals from a Jenkins properties file
+ * @param project - current project
+ * @param propertiesFileId - pointing to a Jenkins properties file
+ * @param type (can be "current" or "upstream")
+ */
+def getGoals(String project, String propertiesFileId, String type = 'current') {
+    configFileProvider([configFile(fileId: propertiesFileId, variable: 'PROPERTIES_FILE')]) {
+        def propertiesFile = readProperties file: PROPERTIES_FILE
+        //return propertiesFile."goals.${project}.${type}"
+        return propertiesFile."goals.${project}.${type}" ?: propertiesFile."goals.default.${type}"
+
+    }
+}
+
+/**
+ *
+ * @param project a string following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param goals maven goals
+ * @param sonarCloudId token for sonarcloud
+ */
+def buildProjectSonar(String project, String settingsXmlId, String goals, String sonarCloudId) {
+    def projectGroupName = getProjectGroupName(project)
+    def group = projectGroupName[0]
+    def name = projectGroupName[1]
+
+    println "Building ${group}/${name}"
+    dir("${env.WORKSPACE}/${group}_${name}") {
+        maven.runMavenWithSettingsSonar(settingsXmlId, goals, sonarCloudId)
     }
 }
 
