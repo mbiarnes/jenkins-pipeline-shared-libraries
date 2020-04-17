@@ -79,7 +79,7 @@ def getProject(String projectUrl) {
  * @param project the project
  * @param defaultGroup the default project group. Optional.
  */
-def getProjectGroupName(String project, String defaultGroup = "kiegroup") {
+def getProjectGroupName(String project, String defaultGroup = "mbiarnes") {
     def projectNameGroup = project.split("\\/")
     def group = projectNameGroup.size() > 1 ? projectNameGroup[0] : defaultGroup
     def name = projectNameGroup.size() > 1 ? projectNameGroup[1] : project
