@@ -37,10 +37,10 @@ def upstreamBuild(List<String> projectCollection, String currentProject, String 
  * @param the file with a collection of items following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
  * @param currentProject the project to build the stream from, like kiegroup/drools
  * @param settingsXmlId maven settings xml file id
- * @param propertiesFileId settings file that defines the goals for each rep
+ * @param propertiesFileId file that defines the maven goals for each rep
  */
 def pullRequestBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId, String sonarCloudId) {
-    println "Upstream building of project ${currentProject}"
+    println "Building of project ${currentProject}"
     println "Project collection: ${projectCollection}"
 
     checkoutProjects(projectCollection, currentProject)
@@ -72,9 +72,40 @@ def pullRequestBuild(List<String> projectCollection, String currentProject, Stri
 def getGoals(String project, String propertiesFileId, String type = 'current') {
     configFileProvider([configFile(fileId: propertiesFileId, variable: 'PROPERTIES_FILE')]) {
         def propertiesFile = readProperties file: PROPERTIES_FILE
-        //return propertiesFile."goals.${project}.${type}"
         return propertiesFile."goals.${project}.${type}" ?: propertiesFile."goals.default.${type}"
 
+    }
+}
+
+/**
+ * Builds the compile downstream (upstream projects, the current project and the downstream projects)
+ * @param the file with a collection of items following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param currentProject the project to build the stream from, like kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param propertiesFileId file that defines the maven goals for each rep
+ */
+def pullCompileDownstreamBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId) {
+    println "Compile downstream build of project ${currentProject}"
+    println "Project collection: ${projectCollection}"
+    String limitProject='optaweb-vehicle-routing'
+    checkoutProjects(projectCollection, limitProject)
+
+    int counter=0
+
+    // Build project tree from currentProject node
+    for (i = 0; currentProject != projectCollection.get(i); i++) {
+        println "Build of current Upstream Project: " + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'upstream'))
+        println "counter: " + i
+        counter = i
+    }
+
+    println "Build of current Project: ${currentProject}"
+    buildProject(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId))
+
+    for (i=counter+2; projectCollection.get(i); i++) {
+        println "Build of current Downstream Project: " + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'downstream'))
     }
 }
 
