@@ -91,8 +91,8 @@ def pullCompileDownstreamBuild(List<String> projectCollection, String currentPro
     def currentProjectIndex = projectCollection.findIndexOf { it == currentProject }
     // Build project tree from currentProject node
     for (i = 0; i < projectCollection.size(); i++) {
-        println "Build of current Upstream Project: " + projectCollection.get(i)
         def type = i < currentProjectIndex ? 'upstream' :  i == currentProjectIndex ? 'current' : 'downstream'
+        println "Build of project [${projectCollection.get(i)}] with type [${type}]"
         buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, type))
     }
 }
@@ -183,7 +183,7 @@ def getProject(String projectUrl) {
  * @param project the project
  * @param defaultGroup the default project group. Optional.
  */
-def getProjectGroupName(String project, String defaultGroup = "mbiarnes") {
+def getProjectGroupName(String project, String defaultGroup = "kiegroup") {
     def projectNameGroup = project.split("\\/")
     def group = projectNameGroup.size() > 1 ? projectNameGroup[0] : defaultGroup
     def name = projectNameGroup.size() > 1 ? projectNameGroup[1] : project
