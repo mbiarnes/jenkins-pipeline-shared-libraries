@@ -85,27 +85,15 @@ def getGoals(String project, String propertiesFileId, String type = 'current') {
  * @param propertiesFileId file that defines the maven goals for each rep
  */
 def pullCompileDownstreamBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId) {
-    println "Compile downstream build of project ${currentProject}"
-    println "Project collection: ${projectCollection}"
-    String limitProject='optaweb-vehicle-routing'
-    checkoutProjects(projectCollection, limitProject)
+    println "Compile downstream build of project [${currentProject}] for project collection ${projectCollection}"
+    checkoutProjects(projectCollection)
 
-    int counter=0
-
+    def currentProjectIndex = projectCollection.findIndexOf { it == currentProject }
     // Build project tree from currentProject node
-    for (i = 0; currentProject != projectCollection.get(i); i++) {
+    for (i = 0; i < projectCollection.size(); i++) {
         println "Build of current Upstream Project: " + projectCollection.get(i)
-        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'upstream'))
-        println "counter: " + i
-        counter = i
-    }
-
-    println "Build of current Project: ${currentProject}"
-    buildProject(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId))
-
-    for (i=counter+2; projectCollection.get(i); i++) {
-        println "Build of current Downstream Project: " + projectCollection.get(i)
-        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'downstream'))
+        def type = i < currentProjectIndex ? 'upstream' :  i == currentProjectIndex ? 'current' : 'downstream'
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, type))
     }
 }
 
@@ -151,10 +139,10 @@ def buildProject(String project, String settingsXmlId, String goals, Boolean ski
  * @param projectCollection the list of projects to be checked out
  * @param limitProject the project to stop
  */
-def checkoutProjects(List<String> projectCollection, String limitProject) {
+def checkoutProjects(List<String> projectCollection, String limitProject = null) {
     println "Checking out projects ${projectCollection}"
 
-    for (i = 0; i == 0 || limitProject != projectCollection.get(i-1); i++) {
+    for (i = 0; limitProject ? (i == 0 || limitProject != projectCollection.get(i-1)) : i < projectCollection.size(); i++) {
         def projectGroupName = getProjectGroupName(projectCollection.get(i))
         def group = projectGroupName[0]
         def name = projectGroupName[1]
