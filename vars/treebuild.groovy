@@ -5,7 +5,7 @@
  * @param goals maven goals
  * @param skipTests Boolean to skip tests or not
  */
-def downstreamBuild(def projectCollection, String settingsXmlId, String goals, Boolean skipTests = null) {
+def downstreamBuild(List<String> projectCollection, String settingsXmlId, String goals, Boolean skipTests = null) {
     println "Downstream building. Reading Lines for ${projectCollection}"
     def lastLine = projectCollection.get(projectCollection.size() - 1)
     println "Downstream building ${lastLine} project."
@@ -20,14 +20,111 @@ def downstreamBuild(def projectCollection, String settingsXmlId, String goals, B
  * @param goals maven goals
  * @param skipTests Boolean to skip tests or not
  */
-def upstreamBuild(def projectCollection, String currentProject, String settingsXmlId, String goals, Boolean skipTests = null) {
+def upstreamBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String goals, Boolean skipTests = null) {
     println "Upstream building ${currentProject} project for ${projectCollection}"
+
+    checkoutProjects(projectCollection, currentProject)
+
     // Build project tree from currentProject node
-    for (i = 0; currentProject != projectCollection.get(i); i++) {
+    for (i = 0; i == 0 || currentProject != projectCollection.get(i - 1); i++) {
         buildProject(projectCollection.get(i), settingsXmlId, goals, skipTests)
     }
+}
 
-    buildProject(currentProject, settingsXmlId, goals, skipTests)
+
+/**
+ * Builds the upstream for a specific project + the project itself (normal PR) + a SONARCLOUD analisys if needed
+ * @param the file with a collection of items following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param currentProject the project to build the stream from, like kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param propertiesFileId file that defines the maven goals for each rep
+ */
+def pullRequestBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId, String sonarCloudId) {
+    println "Building of project ${currentProject}"
+    println "Project collection: ${projectCollection}"
+
+    checkoutProjects(projectCollection, currentProject)
+
+    // Build project tree from currentProject node
+    for (i = 0; currentProject != projectCollection.get(i); i++) {
+        println "Current Upstream Project:" + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'upstream'))
+    }
+
+    println "Build of current project: ${currentProject}"
+    buildProject(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId))
+
+    def sonarCloudReps = ["optaplanner", "drools", "appformer", "jbpm", "drools-wb", "kie-soup", "droolsjbpm-integration", "kie-wb-common", "openshift-drools-hacep"]
+    if(sonarCloudReps.contains(currentProject)) {
+        println "SONARCLOUD analysis of : ${currentProject}"
+        buildProjectSonar(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId, 'sonarcloud'), sonarCloudId)
+    } else {
+        println "INFO: ${currentProject} project is not for SONARCLOUD analysis"
+    }
+}
+
+/**
+ * Fetches the goals from a Jenkins properties file
+ * @param project - current project
+ * @param propertiesFileId - pointing to a Jenkins properties file
+ * @param type (can be "current" or "upstream")
+ */
+def getGoals(String project, String propertiesFileId, String type = 'current') {
+    configFileProvider([configFile(fileId: propertiesFileId, variable: 'PROPERTIES_FILE')]) {
+        def propertiesFile = readProperties file: PROPERTIES_FILE
+        return propertiesFile."goals.${project}.${type}" ?: propertiesFile."goals.default.${type}"
+
+    }
+}
+
+/**
+ * Builds the compile downstream (upstream projects, the current project and the downstream projects)
+ * @param the file with a collection of items following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param currentProject the project to build the stream from, like kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param propertiesFileId file that defines the maven goals for each rep
+ */
+def pullCompileDownstreamBuild(List<String> projectCollection, String currentProject, String settingsXmlId, String propertiesFileId) {
+    println "Compile downstream build of project ${currentProject}"
+    println "Project collection: ${projectCollection}"
+    String limitProject='optaweb-vehicle-routing'
+    checkoutProjects(projectCollection, limitProject)
+
+    int counter=0
+
+    // Build project tree from currentProject node
+    for (i = 0; currentProject != projectCollection.get(i); i++) {
+        println "Build of current Upstream Project: " + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'upstream'))
+        println "counter: " + i
+        counter = i
+    }
+
+    println "Build of current Project: ${currentProject}"
+    buildProject(currentProject, settingsXmlId, getGoals(currentProject, propertiesFileId))
+
+    for (i=counter+2; projectCollection.get(i); i++) {
+        println "Build of current Downstream Project: " + projectCollection.get(i)
+        buildProject(projectCollection.get(i), settingsXmlId, getGoals(projectCollection.get(i), propertiesFileId, 'downstream'))
+    }
+}
+
+/**
+ *
+ * @param project a string following the pattern PROJECT_GROUP/PROJECT_NAME, for example kiegroup/drools
+ * @param settingsXmlId maven settings xml file id
+ * @param goals maven goals
+ * @param sonarCloudId token for sonarcloud
+ */
+def buildProjectSonar(String project, String settingsXmlId, String goals, String sonarCloudId) {
+    def projectGroupName = getProjectGroupName(project)
+    def group = projectGroupName[0]
+    def name = projectGroupName[1]
+
+    println "Building ${group}/${name}"
+    dir("${env.WORKSPACE}/${group}_${name}") {
+        maven.runMavenWithSettingsSonar(settingsXmlId, goals, sonarCloudId)
+    }
 }
 
 /**
@@ -43,10 +140,28 @@ def buildProject(String project, String settingsXmlId, String goals, Boolean ski
     def name = projectGroupName[1]
 
     println "Building ${group}/${name}"
-    sh "mkdir -p ${group}_${name}"
     dir("${env.WORKSPACE}/${group}_${name}") {
-        checkoutProject(name, group)
         maven.runMavenWithSettings(settingsXmlId, goals, skipTests != null ? skipTests : new Properties())
+    }
+}
+
+/**
+ * Checks out the project collection
+ *
+ * @param projectCollection the list of projects to be checked out
+ * @param limitProject the project to stop
+ */
+def checkoutProjects(List<String> projectCollection, String limitProject) {
+    println "Checking out projects ${projectCollection}"
+
+    for (i = 0; i == 0 || limitProject != projectCollection.get(i-1); i++) {
+        def projectGroupName = getProjectGroupName(projectCollection.get(i))
+        def group = projectGroupName[0]
+        def name = projectGroupName[1]
+        sh "mkdir -p ${group}_${name}"
+        dir("${env.WORKSPACE}/${group}_${name}") {
+            checkoutProject(name, group)
+        }
     }
 }
 
